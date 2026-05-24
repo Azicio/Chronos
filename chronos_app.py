@@ -2,6 +2,8 @@ import streamlit as st
 import datetime
 import requests
 import json
+import base64
+import pandas as pd
 
 # Pasted Webhook URL generated from your Google Apps Script Deployment
 WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzrNZpAX19NUV6KFTUwd2hcB4G4KuT5LAkhIF-1TApbq7GzYwqv9befLltmWAdCc7TJjw/exec"
