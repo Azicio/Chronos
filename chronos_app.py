@@ -2,9 +2,13 @@ import streamlit as st
 import datetime
 import requests
 import json
+import os
+import base64  # Fixed: Resolves Budi login camera conversion crash
+import pandas as pd  # Fixed: Resolves Azicio matrix_mock definition error
 
-# Pasted Webhook URL generated from your Google Apps Script Deployment
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzrNZpAX19NUV6KFTUwd2hcB4G4KuT5LAkhIF-1TApbq7GzYwqv9befLltmWAdCc7TJjw/exec"
+# Abstracted Pipeline Link via Streamlit Secrets Manager
+# Bypasses public GitHub visibility completely
+WEBHOOK_URL = st.secrets["github"] ["webhook_url"]
 
 # 1. Coordinate Timezone Realignment (WIT - GMT+9)
 WIT = datetime.timezone(datetime.timedelta(hours=9))
@@ -45,24 +49,27 @@ if not st.session_state.authenticated:
     phone_input = st.text_input("📞 Enter Phone Number", placeholder="e.g., 0812XXXXXXXX")
     pin_input = st.text_input("🔑 Enter 4-Digit Security PIN", type="password", max_chars=4)
     
-    if st.button("Verify Credentials"):
-        # Explicit Field Validation Loops (No 5-minute lockout penalties)
-        if phone_input.strip() == "081295132399" and pin_input == "1212":  # Admin Credentials Mock
-            st.session_state.authenticated = True
-            st.session_state.user_role = "Tier_3"
-            st.session_state.operator_name = "Azicio (Administrator)"
-            st.rerun()
-        elif phone_input.strip() == "081234567890" and pin_input == "5678":  # Driver Credentials Mock
-            st.session_state.authenticated = True
-            st.session_state.user_role = "Tier_1"
-            st.session_state.operator_name = "Driver_Budi"
-            st.rerun()
-        else:
-            # Custom Diagnostic Warnings based on specific input values
-            if len(pin_input) != 4:
-                st.markdown('<div class="error-box">⚠️ Authentication Anomaly: Security PIN must be exactly 4 digits.</div>', unsafe_allow_html=True)
+    # --- UPGRADED DYNAMIC LOGIN CHECK LOOP ---
+if st.button("Verify Credentials"):
+    try:
+        # Load user fuel ledger matrix dynamically
+        with open("data/users.json", "r") as f:
+            user_db = json.load(f)
+            
+        if phone_input.strip() in user_db:
+            target_user = user_db[phone_input.strip()]
+            if pin_input == target_user["pin"]:
+                st.session_state.authenticated = True
+                st.session_state.user_role = target_user["role"]
+                st.session_state.operator_name = target_user["name"]
+                st.rerun()
             else:
-                st.markdown('<div class="error-box">❌ Access Denied: Unrecognized Phone Number or PIN value.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="error-box">❌ Access Denied: Incorrect Security PIN code.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="error-box">⚠️ Authentication Anomaly: Phone Number not registered in system database.</div>', unsafe_allow_html=True)
+            
+    except Exception as db_err:
+        st.error(f"Failed to access database registry file: {str(db_err)}")
 
 # --- POST-AUTHENTICATION ACTIVE COCKPIT ---
 else:
@@ -129,37 +136,80 @@ else:
             else:
                 st.warning("⚠️ Verification Requirement: You must take a live photo to execute a clock-in transaction.")
 
-    # ─── TIER 3: DYNAMIC ADMINISTRATIVE OVERRIDE UI ───
+    # --- TIER 3: MASTER ADMINISTRATIVE DASHBOARD ---
     elif st.session_state.user_role == "Tier_3":
-        st.title("📊 CHRONOS MANAGEMENT PANEL")
-        st.caption("Active Visual Attendance Matrix & Operational Notes Archive")
-        
-        # Tab View Navigation Model
-        tab1, tab2 = st.tabs(["📅 Daily Visual Grid", "📖 Operator Field Notes"])
-        
-        with tab1:
-            st.subheader("Rolling Attendance Spreadsheet Matrix")
-            # Mock Data View reflecting intended sheet tracking outputs
-            matrix_mock = pd.DataFrame({
-                "Operator Name": ["Azicio", "Driver_Budi", "Operator_Eko"],
-                "2026-05-22": ["GREEN", "GREEN", "RED"],
-                "2026-05-23": ["GREEN", "YELLOW", "GREEN"],
-                "2026-05-24": ["GREEN", "PENDING", "BLUE"]
-            })
-            st.dataframe(matrix_mock)
-            
-        with tab2:
-            st.subheader("Unresolved Field Logs Queue")
-            # Inline Action Row Control Design Model
-            col1, col2, col3 = st.columns([3, 1, 1])
-            with col1:
-                st.text("📝 Driver_Budi (23 Mei): Delayed due to mud track block at quarry block C.")
-            with col2:
-                if st.button("Mark Noticed", key="note_1"):
-                    st.success("Archived to tab.")
-            with col3:
-                st.button("Under Review", key="review_1")
+        st.title("🚜 Chronos Master Control Console")
+        st.markdown(f"欢迎回来, **{st.session_state.operator_name}** (Clearance: Tier 3 Master)")
 
+        # Create dynamic sub-tabs for administrative division
+        tab1, tab2 = st.tabs(["📊 Attendance Analytics Ledger", "👥 Employee Registry Management"])
+
+        with tab1:
+            st.subheader("Live Operational Attendance Stream")
+            
+            # Safe Data Acquisition Pattern: Pulling from remote pipeline or showing clean fallback
+            # This replaces the broken local mock data reference that caused your line 143 crash
+            try:
+                # For deployment, this would be a requests.get to your sheet or reading a synced cache
+                # Here we provide a clean, empty structure if no live transaction records exist yet
+                attendance_records = [] 
+                
+                if len(attendance_records) > 0:
+                    df_attendance = pd.DataFrame(attendance_records)
+                    st.dataframe(df_attendance, use_container_width=True)
+                else:
+                    st.markdown(
+                        '<div style="background-color: #1a1c23; border-left: 4px solid #ffcc00; padding: 15px; border-radius: 4px;">'
+                        'ℹ️ <strong>System Notice:</strong> No active attendance log transactions detected for this shift period. '
+                        'Waiting for Tier 1 / Tier 2 field operators to submit device tokens.'
+                        '</div>', 
+                        unsafe_allow_html=True
+                    )
+            except Exception as data_err:
+                st.error(f"Data aggregation failure: {str(data_err)}")
+
+        with tab2:
+            st.subheader("Register New Operational Personnel")
+            st.caption("Appends driver authorization credentials directly into the isolated data/users.json database.")
+
+            # Ingestion Fields for New Operators
+            new_phone = st.text_input("Operator Phone Number (Registration ID Key)", placeholder="e.g., 0812XXXXXXXX")
+            new_name = st.text_input("Operator Full Name", placeholder="e.g., Driver Budi")
+            new_pin = st.text_input("Assign Security Access PIN (4 Digits)", max_chars=4, type="password")
+            new_role = st.selectbox("Assign System Clearance Level", ["Tier_1", "Tier_2", "Tier_3"])
+
+            if st.button("🔐 Commit Operator to Database Matrix"):
+                if new_phone.strip() == "" or new_name.strip() == "" or new_pin.strip() == "":
+                    st.warning("⚠️ Validation Error: All operational registration fields must be populated.")
+                else:
+                    user_db_path = "data/users.json"
+                    
+                    # Ensure local database directory path layout exists safely
+                    os.makedirs("data", exist_ok=True)
+                    
+                    # Load existing personnel fuel matrix or create an empty one
+                    if os.path.exists(user_db_path):
+                        with open(user_db_path, "r") as f:
+                            try:
+                                current_users = json.load(f)
+                            except json.JSONDecodeError:
+                                current_users = {}
+                    else:
+                        current_users = {}
+
+                    # Map the new employee data entry row
+                    current_users[new_phone.strip()] = {
+                        "pin": new_pin.strip(),
+                        "name": new_name.strip(),
+                        "role": new_role
+                    }
+
+                    # Write updated matrix block back down to the JSON fuel file
+                    with open(user_db_path, "w") as f:
+                        json.dump(current_users, f, indent=2)
+
+                    st.success(f"⚡ Success: Personnel token for '{new_name}' locked into fuel matrix database!")
+                    st.rerun()
     # High-Alert Red Confirmation Box for Logout Safety Handshaking
     st.divider()
     if st.button("🚪 Force Logout Session"):
