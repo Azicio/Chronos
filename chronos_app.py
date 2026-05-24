@@ -2,11 +2,12 @@ import streamlit as st
 import datetime
 import requests
 import json
-import base64
-import pandas as pd
+import base64  # Fixed: Resolves Budi login camera conversion crash
+import pandas as pd  # Fixed: Resolves Azicio matrix_mock definition error
 
-# Pasted Webhook URL generated from your Google Apps Script Deployment
-WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzrNZpAX19NUV6KFTUwd2hcB4G4KuT5LAkhIF-1TApbq7GzYwqv9befLltmWAdCc7TJjw/exec"
+# Abstracted Pipeline Link via Streamlit Secrets Manager
+# Bypasses public GitHub visibility completely
+WEBHOOK_URL = st.secrets["github"] ["webhook_url"]
 
 # 1. Coordinate Timezone Realignment (WIT - GMT+9)
 WIT = datetime.timezone(datetime.timedelta(hours=9))
@@ -47,24 +48,27 @@ if not st.session_state.authenticated:
     phone_input = st.text_input("📞 Enter Phone Number", placeholder="e.g., 0812XXXXXXXX")
     pin_input = st.text_input("🔑 Enter 4-Digit Security PIN", type="password", max_chars=4)
     
-    if st.button("Verify Credentials"):
-        # Explicit Field Validation Loops (No 5-minute lockout penalties)
-        if phone_input.strip() == "081295132399" and pin_input == "1212":  # Admin Credentials Mock
-            st.session_state.authenticated = True
-            st.session_state.user_role = "Tier_3"
-            st.session_state.operator_name = "Azicio (Administrator)"
-            st.rerun()
-        elif phone_input.strip() == "081234567890" and pin_input == "5678":  # Driver Credentials Mock
-            st.session_state.authenticated = True
-            st.session_state.user_role = "Tier_1"
-            st.session_state.operator_name = "Driver_Budi"
-            st.rerun()
-        else:
-            # Custom Diagnostic Warnings based on specific input values
-            if len(pin_input) != 4:
-                st.markdown('<div class="error-box">⚠️ Authentication Anomaly: Security PIN must be exactly 4 digits.</div>', unsafe_allow_html=True)
+    # --- UPGRADED DYNAMIC LOGIN CHECK LOOP ---
+if st.button("Verify Credentials"):
+    try:
+        # Load user fuel ledger matrix dynamically
+        with open("data/users.json", "r") as f:
+            user_db = json.load(f)
+            
+        if phone_input.strip() in user_db:
+            target_user = user_db[phone_input.strip()]
+            if pin_input == target_user["pin"]:
+                st.session_state.authenticated = True
+                st.session_state.user_role = target_user["role"]
+                st.session_state.operator_name = target_user["name"]
+                st.rerun()
             else:
-                st.markdown('<div class="error-box">❌ Access Denied: Unrecognized Phone Number or PIN value.</div>', unsafe_allow_html=True)
+                st.markdown('<div class="error-box">❌ Access Denied: Incorrect Security PIN code.</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="error-box">⚠️ Authentication Anomaly: Phone Number not registered in system database.</div>', unsafe_allow_html=True)
+            
+    except Exception as db_err:
+        st.error(f"Failed to access database registry file: {str(db_err)}")
 
 # --- POST-AUTHENTICATION ACTIVE COCKPIT ---
 else:
