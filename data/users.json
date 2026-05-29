@@ -1,0 +1,22 @@
+{
+  "081295132399": {
+    "pin": "1212",
+    "name": "Azicio",
+    "role": "Tier_3"
+  },
+  "081234567890": {
+    "pin": "5678",
+    "name": "Driver_Budi",
+    "role": "Tier_1"
+  },
+  "081211112222": {
+    "pin": "9900",
+    "name": "Operator_Eko",
+    "role": "Tier_2"
+  },
+  "082239829468": {
+    "pin": "1234",
+    "name": "Wendy Nahaklay",
+    "role": "Tier_3"
+  }
+}
